@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+
+import subprocess
+import sys
+from pathlib import Path
+
+OWNER = "SowinskiBraeden"
+GITEA_HOST = "git.sowinski.dev"
+GITHUB_HOST = "github.com"
+
+
+def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args],
+        text=True,
+        capture_output=True,
+        check=check,
+    )
+
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: git-new <repo-name>")
+        sys.exit(1)
+
+    repo_name = sys.argv[1].strip()
+
+    if not repo_name:
+        print("Error: repository name cannot be empty.")
+        sys.exit(1)
+
+    current_dir = Path.cwd()
+
+    # Refuse to run anywhere inside an existing Git repository.
+    existing_repo = git("rev-parse", "--show-toplevel", check=False)
+
+    if existing_repo.returncode == 0:
+        repo_root = existing_repo.stdout.strip()
+
+        print("Error: already inside a Git repository.")
+        print(f"Repository root: {repo_root}")
+        sys.exit(1)
+
+    gitea_url = f"git@{GITEA_HOST}:{OWNER}/{repo_name}.git"
+    github_url = f"git@{GITHUB_HOST}:{OWNER}/{repo_name}.git"
+
+    print(f"Initializing: {current_dir}")
+    print(f"Remote repo: {OWNER}/{repo_name}")
+    print()
+
+    # Initialize repository.
+    git("init")
+
+    # Use main as the initial branch.
+    git("branch", "-m", "main")
+
+    # Gitea is canonical: fetch + first push destination.
+    git("remote", "add", "origin", gitea_url)
+
+    git(
+        "remote",
+        "set-url",
+        "--push",
+        "origin",
+        gitea_url,
+    )
+
+    # GitHub is the secondary push destination.
+    git(
+        "remote",
+        "set-url",
+        "--add",
+        "--push",
+        "origin",
+        github_url,
+    )
+
+    print("Repository initialized.")
+    print()
+    print("Remotes:")
+    print(f"  fetch -> {gitea_url}")
+    print(f"  push  -> {gitea_url}")
+    print(f"  push  -> {github_url}")
+
+
+if __name__ == "__main__":
+    main()
