@@ -5,7 +5,9 @@ import subprocess
 from pathlib import Path
 
 PROJECTS_DIR = Path.home() / "Projects"
-GITHUB_USER = "SowinskiBraeden"
+
+OWNER = "SowinskiBraeden"
+GITHUB_HOST = "github.com"
 GITEA_HOST = "git.sowinski.dev"
 
 
@@ -18,41 +20,46 @@ def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
     )
 
 
-def find_git_repositories(root: Path):
+def find_git_repositories(root: Path) -> list[Path]:
+    """Find all Git repositories recursively below root."""
+    repositories = set()
+
+    for git_path in root.rglob(".git"):
+        if git_path.is_dir() or git_path.is_file():
+            repositories.add(git_path.parent)
+
+    return sorted(repositories)
+
+
+def parse_repo_name(url: str) -> str | None:
     """
-    Find repositories recursively under ~/Projects.
+    Extract the repository name if the URL belongs to OWNER on either
+    GitHub or our Gitea instance.
 
-    Once a .git directory/file is found, don't recurse further into that
-    repository looking for nested repositories.
-    """
-    repositories = []
-
-    for path in root.rglob(".git"):
-        if path.is_dir() or path.is_file():
-            repositories.append(path.parent)
-
-    return sorted(set(repositories))
-
-
-def github_repo_name(origin: str):
-    """
-    Recognize origins such as:
+    Supported examples:
 
       git@github.com:SowinskiBraeden/example.git
       https://github.com/SowinskiBraeden/example.git
-      ssh://git@github.com/SowinskiBraeden/example.git
 
-    Returns "example" or None.
+      git@git.sowinski.dev:SowinskiBraeden/example.git
+      https://git.sowinski.dev/SowinskiBraeden/example.git
     """
 
+    hosts = [
+        re.escape(GITHUB_HOST),
+        re.escape(GITEA_HOST),
+    ]
+
+    host_pattern = "(?:" + "|".join(hosts) + ")"
+
     patterns = [
-        rf"^git@github\.com:{re.escape(GITHUB_USER)}/([^/]+?)(?:\.git)?$",
-        rf"^https?://github\.com/{re.escape(GITHUB_USER)}/([^/]+?)(?:\.git)?/?$",
-        rf"^ssh://git@github\.com/{re.escape(GITHUB_USER)}/([^/]+?)(?:\.git)?/?$",
+        rf"^git@{host_pattern}:{re.escape(OWNER)}/([^/]+?)(?:\.git)?$",
+        rf"^https?://{host_pattern}/{re.escape(OWNER)}/([^/]+?)(?:\.git)?/?$",
+        rf"^ssh://git@{host_pattern}/{re.escape(OWNER)}/([^/]+?)(?:\.git)?/?$",
     ]
 
     for pattern in patterns:
-        match = re.match(pattern, origin)
+        match = re.match(pattern, url)
 
         if match:
             return match.group(1)
@@ -60,50 +67,65 @@ def github_repo_name(origin: str):
     return None
 
 
-def configure_repository(repo: Path):
-    result = git(repo, "remote", "get-url", "origin", check=False)
+def get_origin(repo: Path) -> str | None:
+    result = git(
+        repo,
+        "remote",
+        "get-url",
+        "origin",
+        check=False,
+    )
 
     if result.returncode != 0:
+        return None
+
+    return result.stdout.strip()
+
+
+def configure_repository(repo: Path) -> bool:
+    origin = get_origin(repo)
+
+    if origin is None:
         print(f"SKIP   {repo}")
         print("       No origin remote")
-        return
+        return False
 
-    origin = result.stdout.strip()
-    repo_name = github_repo_name(origin)
+    repo_name = parse_repo_name(origin)
 
-    if not repo_name:
+    if repo_name is None:
         print(f"SKIP   {repo}")
-        print(f"       Origin is not {GITHUB_USER}'s GitHub: {origin}")
-        return
+        print(f"       Unrecognized/non-{OWNER} origin:")
+        print(f"       {origin}")
+        return False
 
-    github_url = f"git@github.com:{GITHUB_USER}/{repo_name}.git"
-    gitea_url = f"git@{GITEA_HOST}:{GITHUB_USER}/{repo_name}.git"
+    gitea_url = f"git@{GITEA_HOST}:{OWNER}/{repo_name}.git"
+    github_url = f"git@{GITHUB_HOST}:{OWNER}/{repo_name}.git"
 
-    existing_push_urls = git(
-        repo,
-        "remote",
-        "get-url",
-        "--all",
-        "--push",
-        "origin",
-    ).stdout.splitlines()
+    print(f"UPDATE {repo}")
+    print(f"       Repository: {OWNER}/{repo_name}")
 
-    print(f"FOUND  {repo}")
-    print(f"       Repository: {GITHUB_USER}/{repo_name}")
-
-    # Explicitly establish GitHub as the first push destination.
     #
-    # If no separate pushurl exists yet, this creates one without changing
-    # the fetch URL.
-    if github_url not in existing_push_urls:
-        git(repo, "remote", "set-url", "--push", "origin", github_url)
-        print(f"       + push -> {github_url}")
-    else:
-        print("       = GitHub push already configured")
+    # FETCH
+    #
+    # Gitea is authoritative.
+    #
+    git(
+        repo,
+        "remote",
+        "set-url",
+        "origin",
+        gitea_url,
+    )
 
-    # Re-read because set-url --push may have replaced the implicit
-    # origin push URL.
-    existing_push_urls = git(
+    print(f"       fetch -> {gitea_url}")
+
+    #
+    # PUSH
+    #
+    # Reset the push URL list so running this utility repeatedly cannot
+    # create duplicate push destinations.
+    #
+    current_push_urls = git(
         repo,
         "remote",
         "get-url",
@@ -112,36 +134,76 @@ def configure_repository(repo: Path):
         "origin",
     ).stdout.splitlines()
 
-    if gitea_url not in existing_push_urls:
+    # Delete existing explicit push URLs.
+    #
+    # Git returns an error if there are no explicit push URLs matching,
+    # which is harmless here.
+    for push_url in current_push_urls:
         git(
             repo,
             "remote",
             "set-url",
-            "--add",
+            "--delete",
             "--push",
             "origin",
-            gitea_url,
+            re.escape(push_url),
+            check=False,
         )
-        print(f"       + push -> {gitea_url}")
-    else:
-        print("       = Gitea push already configured")
 
+    # Establish Gitea as the primary push destination.
+    git(
+        repo,
+        "remote",
+        "set-url",
+        "--push",
+        "origin",
+        gitea_url,
+    )
+
+    # GitHub remains the public/legacy destination.
+    git(
+        repo,
+        "remote",
+        "set-url",
+        "--add",
+        "--push",
+        "origin",
+        github_url,
+    )
+
+    print(f"       push  -> {gitea_url}")
+    print(f"       push  -> {github_url}")
     print()
+
+    return True
 
 
 def main():
     if not PROJECTS_DIR.exists():
-        raise SystemExit(f"Projects directory does not exist: {PROJECTS_DIR}")
+        raise SystemExit(
+            f"Projects directory does not exist: {PROJECTS_DIR}"
+        )
 
     repositories = find_git_repositories(PROJECTS_DIR)
 
-    print(f"Searching {PROJECTS_DIR}")
-    print(f"Found {len(repositories)} Git repositories.\n")
+    print(f"Searching: {PROJECTS_DIR}")
+    print(f"Found {len(repositories)} Git repositories.")
+    print()
+
+    configured = 0
+    skipped = 0
 
     for repo in repositories:
-        configure_repository(repo)
+        if configure_repository(repo):
+            configured += 1
+        else:
+            skipped += 1
 
-    print("Done.")
+    print("=" * 60)
+    print("Finished")
+    print(f"Configured: {configured}")
+    print(f"Skipped:    {skipped}")
+    print(f"Total:      {len(repositories)}")
 
 
 if __name__ == "__main__":
