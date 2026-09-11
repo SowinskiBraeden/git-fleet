@@ -1,4 +1,4 @@
-# git-origin-util
+# git-fleet
 
 Small collection of Git utilities I use to keep my local repositories configured between my self-hosted Gitea instance and GitHub.
 
