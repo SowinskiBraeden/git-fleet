@@ -1,63 +1,65 @@
 # git-fleet
 
-Small collection of Git utilities I use to keep my local repositories configured between my self-hosted Gitea instance and GitHub.
+A Git extension for managing repositories across multiple Git hosts and destinations.
 
-Gitea is my primary Git server. GitHub is kept as a secondary/public copy of my repositories.
+`git-fleet` is a native CLI I'm building to simplify the Git workflows I use across self-hosted Git services and public hosts. The project started as a few personal scripts for configuring dual-push repositories and is being rebuilt in OCaml as a single, reusable command.
 
-## `setup_dual_push.py`
+## Status
 
-Scans my local Git repositories and updates repos owned by `SowinskiBraeden` to use:
+**v0.1.0: CLI foundation**
 
-- **Fetch:** `git.sowinski.dev`
-- **Push:** `git.sowinski.dev`
-- **Push:** `github.com`
+Initial release is just figuring out the project structure and command-line interface:
 
-Other repositories and repositories without a recognized origin are skipped.
+- Native OCaml executable
+- Dune build system
+- Cmdliner command interface
+- `git fleet` Git subcommand integration
+- Automated tests
 
-Useful for configuring existing projects or setting up a new machine.
+Remote and multi-destination management will begin in v0.2.0.
 
-## `git-new`
+## Usage
 
-Small command for initializing new projects with my normal Git configuration.
+Once `git-fleet` is installed somewhere on your `PATH`, Git automatically exposes it as a subcommand:
 
-Run it from inside the project directory:
-
-```bash
-git-new <repo-name>
+```sh
+git fleet --help
+git fleet --version
 ```
 
-It will:
+You can also invoke the executable directly:
 
-Refuse to run if the directory is already inside a Git repository
-Initialize a new Git repository
-Set the default branch to main
-Set Gitea as the fetch origin
-Set Gitea and GitHub as push origins
-
-The repo name does not need to match the local directory name.
-
-## Setup
-
-Make the script executable:
-
-```bash
-chmod +x git-new
+```sh
+git-fleet --help
 ```
 
-Symlink it into /usr/local/bin:
+## Development
 
-```bash
-sudo ln -s "$(pwd)/git-new" /usr/local/bin/git-new
+Install the project dependencies:
+
+```sh
+opam install . --deps-only --with-test
 ```
 
-It can then be used from any directory:
+Build:
 
-```bash
-mkdir my-project
-cd my-project
-
-git-new my-repo-name
+```sh
+dune build
 ```
 
-The repositories must already exist on Gitea and GitHub before pushing.
+Run the tests:
 
+```sh
+dune runtest
+```
+
+Run the development executable:
+
+```sh
+dune exec git-fleet -- --help
+dune exec git-fleet -- --version
+```
+
+## License
+
+MIT

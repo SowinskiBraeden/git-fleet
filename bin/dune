@@ -1,0 +1,5 @@
+(executable
+ (name main)
+ (public_name git-fleet)
+ (package git-fleet)
+ (libraries git_fleet cmdliner))
