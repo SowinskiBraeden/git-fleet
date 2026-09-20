@@ -1,4 +1,4 @@
 (library
  (name git_fleet)
  (public_name git-fleet.lib)
- (libraries cmdliner))
+ (libraries cmdliner unix))
