@@ -1,7 +1,7 @@
 let test_version () =
   Alcotest.(check string)
     "version"
-    "0.1.0"
+    "0.2.0"
     Git_fleet.Version.value
 
 let () =
@@ -11,7 +11,7 @@ let () =
       ( "version",
         [
           Alcotest.test_case
-            "reports 0.1.0"
+            "reports 0.2.0"
             `Quick
             test_version;
         ] );
